@@ -1,0 +1,57 @@
+{
+  "name": "zodpress",
+  "version": "1.0.0",
+  "description": "A JavaScript library",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "main": "./dist/cjs/index.js",
+  "scripts": {
+    "start": "node dist/cjs/index.js",
+    "dev": "nodemon src/index.ts",
+    "debug": "nodemon --exec node --inspect=0.0.0.0:9229 --require ts-node/register src/index.ts",
+    "test": "jest --config jestconfig.json",
+    "build": "tsc -b ./tsconfig.cjs.json ./tsconfig.esm.json ./tsconfig.types.json",
+    "build:clean": "rm -rf ./dist",
+    "format": "prettier --write \"src/**/*.{ts,js,jsx,json}\"",
+    "lint": "eslint src/**/*.*",
+    "prepublish": "npm run build",
+    "prepare": "husky install",
+    "prepublishOnly": "npm test && npm run lint",
+    "preversion": "npm run lint",
+    "version": "npm run format && git add -A .",
+    "postversion": "git push && git push --tags",
+    "commit": "cz"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/biswasray/zodpress.git"
+  },
+  "keywords": [
+    "express",
+    "zod",
+    "swagger",
+    "openapi"
+  ],
+  "author": "Subhasish Biswasray",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/biswasray/zodpress/issues"
+  },
+  "homepage": "https://github.com/biswasray/zodpress#readme",
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@typescript-eslint/eslint-plugin": "^5.58.0",
+    "@typescript-eslint/parser": "^5.58.0",
+    "commitizen": "^4.3.0",
+    "cz-conventional-changelog": "^3.3.0",
+    "eslint": "^8.38.0",
+    "eslint-config-prettier": "^8.8.0",
+    "husky": "^9.0.11",
+    "jest": "^29.5.0",
+    "nodemon": "^2.0.21",
+    "prettier": "^2.8.7",
+    "ts-jest": "^29.1.2",
+    "ts-node": "^10.9.1",
+    "typescript": "^4.9.5"
+  }
+}
