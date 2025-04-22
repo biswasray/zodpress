@@ -1,3 +1,3 @@
-const greet = "Hello";
-export const test = 9;
-export default greet;
+import zodpress from "./lib";
+
+export default zodpress;
