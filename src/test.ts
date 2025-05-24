@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 import { z } from "zod";
 import fileUpload from "express-fileupload";
-import zodpress, { Router } from "./lib";
+import zodpress from ".";
 import { requestValidator } from "./lib/validations";
 
 const app = zodpress();
@@ -10,24 +10,23 @@ app.use(zodpress.json());
 app.use(zodpress.urlencoded({ extended: true }));
 app.use(fileUpload());
 
-const userRouter = Router();
+const userRouter = zodpress.Router();
 
-userRouter.Post(
+userRouter.Put(
   "/",
   requestValidator({
-    body: {
-      "multipart/form-data": z.object({
-        text: z.string(),
-        image: z.custom<fileUpload.UploadedFile>().openapi({
-          type: "string",
-          description: "The image to classify",
-          format: "binary",
-        }),
-      }),
+    body: z.object({
+      name: z.string(),
+    }),
+    security: {
+      type: "bearer",
+      bearerFormat: "JWT",
     },
   }),
   (req, res) => {
-    res.json({ message: `User, ${JSON.stringify(req.body)}!` });
+    res.json({
+      message: `User, ${JSON.stringify(req.headers.authorization)}!`,
+    });
   },
 );
 userRouter.Get(
@@ -38,11 +37,11 @@ userRouter.Get(
     }),
   }),
   (req, res) => {
-    res.json({ message: `User , ${JSON.stringify(req.query)}!` });
+    res.json({ message: `User , ${JSON.stringify(req.params)}!` });
   },
 );
 
-const postRouter = Router();
+const postRouter = zodpress.Router();
 
 postRouter.Post(
   "/",
@@ -76,7 +75,7 @@ postRouter.Get(
 
 userRouter.Use("/post", postRouter);
 
-app.Use("/user", userRouter);
+app.Use("/api/v1/user", userRouter);
 
 app.Get(
   "/test",

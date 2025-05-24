@@ -1,3 +1,3 @@
-import zodpress from "./lib";
+import { zodpress } from "./lib";
 
 export default zodpress;

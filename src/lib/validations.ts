@@ -1,36 +1,71 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ZodMediaType } from "@asteasolutions/zod-to-openapi/dist/openapi-registry";
 import express from "express";
-import { z, AnyZodObject, ZodObject, ZodError, ZodUnion } from "zod";
+import {
+  z,
+  AnyZodObject,
+  ZodObject,
+  ZodError,
+  ZodUnion,
+  ZodRawShape,
+  UnknownKeysParam,
+  ZodTypeAny,
+  objectOutputType,
+  objectInputType,
+} from "zod";
+import type { OAuthFlowsObject } from "openapi3-ts/oas30";
+
+// "apiKey" | "http" | "oauth2" | "openIdConnect"
 export type RequestValidatorDefaultOptionType = {
   params?: AnyZodObject;
   body?: AnyZodObject | Partial<Record<ZodMediaType, AnyZodObject>>;
   query?: AnyZodObject;
   response?: AnyZodObject;
+  security?: { name?: string } & (
+    | { type: "basic" }
+    | { type: "bearer"; bearerFormat?: string }
+    | { type: "apiKey" }
+    | { type: "oauth2"; flows: OAuthFlowsObject }
+    | { type: "openIdConnect"; openIdConnectUrl: string }
+  );
 };
 
 export type MediaType =
   | ZodMediaType
   | "multipart/form-data"
   | "application/x-www-form-urlencoded";
+
+export type GenericZodObject = ZodObject<
+  ZodRawShape,
+  UnknownKeysParam,
+  ZodTypeAny,
+  objectOutputType<ZodRawShape, ZodTypeAny, UnknownKeysParam>,
+  objectInputType<ZodRawShape, ZodTypeAny, UnknownKeysParam>
+>;
 export function requestValidator<
-  P extends ZodObject<any, any, any, any, any> = AnyZodObject,
+  P extends GenericZodObject = AnyZodObject,
   Q extends
-    | ZodObject<any, any, any, any, any>
+    | GenericZodObject
     | ZodUnion<
-        readonly [ZodObject<any>, ZodObject<any>, ...ZodObject<any>[]]
+        readonly [GenericZodObject, GenericZodObject, ...GenericZodObject[]]
       > = AnyZodObject,
   B extends
-    | ZodObject<any, any, any, any, any>
+    | GenericZodObject
     | ZodUnion<
-        readonly [ZodObject<any>, ZodObject<any>, ...ZodObject<any>[]]
+        readonly [GenericZodObject, GenericZodObject, ...GenericZodObject[]]
       > = AnyZodObject,
-  ResBody extends ZodObject<any, any, any, any, any> = AnyZodObject,
+  ResBody extends GenericZodObject = AnyZodObject,
 >(option: {
   params?: P;
   body?: B | Partial<Record<MediaType, B>>;
   query?: Q;
   response?: ResBody;
+  security?: { name?: string } & (
+    | { type: "basic" }
+    | { type: "bearer"; bearerFormat?: string }
+    | { type: "apiKey" }
+    | { type: "oauth2"; flows: OAuthFlowsObject }
+    | { type: "openIdConnect"; openIdConnectUrl: string }
+  );
 }) {
   const _handler = function (
     request: express.Request<

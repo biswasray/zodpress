@@ -9,10 +9,16 @@ import {
 import { MediaType, RequestValidatorDefaultOptionType } from "./validations";
 import { OpenAPIObjectConfig } from "@asteasolutions/zod-to-openapi/dist/v3.0/openapi-generator";
 import { z } from "zod";
+import {
+  capitalize,
+  convertRoute,
+  createSecuritySchemeObject,
+  getMainPath,
+} from "./utils";
 
 extendZodWithOpenApi(z);
 
-type Method =
+export type Method =
   | "get"
   | "post"
   | "put"
@@ -21,7 +27,7 @@ type Method =
   | "head"
   | "options"
   | "trace";
-type ZodPressDocType = {
+export type ZodPressDocType = {
   tags?: string[];
   path: string;
   method: Method;
@@ -35,25 +41,45 @@ function getOpenApiDocumentation(
   const generator = new OpenApiGeneratorV3(registry.definitions);
   return generator.generateDocument(config);
 }
-function capitalize(str: string | undefined) {
-  if (!str) return str;
-  return str.charAt(0).toUpperCase() + str.slice(1);
+
+function routeBuilder<M extends Method>(
+  router: express.IRouter,
+  method: M,
+  docs: ZodPressDocType[],
+): express.IRouter[M] {
+  return function (path: unknown, ...handlers: unknown[]) {
+    if (typeof path === "string") {
+      for (const handler of handlers) {
+        if (
+          (typeof handler === "function" || typeof handler === "object") &&
+          handler &&
+          "doc" in handler &&
+          typeof handler.doc === "object" &&
+          handler.doc
+        ) {
+          docs.push({
+            path: path,
+            method: method,
+            data: handler.doc,
+          });
+        }
+      }
+    }
+
+    // router.get()
+
+    return router[method](
+      path as Parameters<(typeof router)[M]>[0],
+      ...(handlers as Parameters<(typeof router)[M]>[1][]),
+    );
+  };
 }
 
-function convertRoute(route: string): string {
-  return route.replace(/:([a-zA-Z0-9_]+)/g, "{$1}");
-}
-function getMainPath(str: string) {
-  const regex = /^\/([^?/]+)/;
-  return str.match(regex)?.[1];
-}
-
-function _zodpress() {
-  const app = express();
-  const registry = new OpenAPIRegistry();
-
-  const docs = [] as ZodPressDocType[];
-  const Use: typeof app.use = function (path: unknown, ...handlers: unknown[]) {
+function useBuilder(
+  router: express.IRouter,
+  docs: ZodPressDocType[],
+): express.IRouter["use"] {
+  return function (path: unknown, ...handlers: unknown[]) {
     const tag =
       typeof path === "string" ? capitalize(getMainPath(path)) : undefined;
     if (typeof path === "string") {
@@ -76,60 +102,28 @@ function _zodpress() {
         }
       }
     }
-    return app.use(
-      path as Parameters<typeof app.use>["0"],
-      ...(handlers as Parameters<typeof app.use>["1"][]),
+    return router.use(
+      path as Parameters<typeof router.use>["0"],
+      ...(handlers as Parameters<typeof router.use>["1"][]),
     );
   };
-  const Get: typeof app.get = function (path: unknown, ...handlers: unknown[]) {
-    if (typeof path === "string") {
-      for (const handler of handlers) {
-        if (
-          (typeof handler === "function" || typeof handler === "object") &&
-          handler &&
-          "doc" in handler &&
-          typeof handler.doc === "object" &&
-          handler.doc
-        ) {
-          docs.push({
-            path: path,
-            method: "get",
-            data: handler.doc,
-          });
-        }
-      }
-    }
-    return app.get(
-      path as Parameters<typeof app.get>["0"],
-      ...(handlers as Parameters<typeof app.get>["1"][]),
-    );
-  };
-  const Post: typeof app.post = function (
-    path: unknown,
-    ...handlers: unknown[]
-  ) {
-    if (typeof path === "string") {
-      for (const handler of handlers) {
-        if (
-          (typeof handler === "function" || typeof handler === "object") &&
-          handler &&
-          "doc" in handler &&
-          typeof handler.doc === "object" &&
-          handler.doc
-        ) {
-          docs.push({
-            path: path,
-            method: "post",
-            data: handler.doc,
-          });
-        }
-      }
-    }
-    return app.post(
-      path as Parameters<typeof app.post>["0"],
-      ...(handlers as Parameters<typeof app.post>["1"][]),
-    );
-  };
+}
+
+function _zodpress() {
+  const app = express();
+  const registry = new OpenAPIRegistry();
+
+  const docs = [] as ZodPressDocType[];
+  const Use = useBuilder(app, docs);
+  const Get = routeBuilder(app, "get", docs);
+  const Post = routeBuilder(app, "post", docs);
+  const Put = routeBuilder(app, "put", docs);
+  const Patch = routeBuilder(app, "patch", docs);
+  const Delete = routeBuilder(app, "delete", docs);
+  const Head = routeBuilder(app, "head", docs);
+  const Options = routeBuilder(app, "options", docs);
+  const Trace = routeBuilder(app, "trace", docs);
+
   const Listen = function (
     port: number | string,
     openAPIObjectConfig: OpenAPIObjectConfig,
@@ -137,6 +131,8 @@ function _zodpress() {
   ) {
     // console.log("docs", docs);
     for (const doc of docs) {
+      const securitySchemes = createSecuritySchemeObject(doc.data.security);
+
       const _route: RouteConfig = {
         tags: doc.tags,
         path: convertRoute(doc.path),
@@ -144,14 +140,6 @@ function _zodpress() {
         request: {
           params: doc.data.params,
           query: doc.data.query,
-          // body: doc.data.body
-          //   ? {
-          //       required: !!doc.data.body,
-          //       content: {
-          //         "application/json": { schema: doc.data.body },
-          //       },
-          //     }
-          //   : undefined,
         },
         responses: {
           200: {
@@ -166,6 +154,14 @@ function _zodpress() {
           },
         },
       };
+      if (securitySchemes) {
+        const authComponent = registry.registerComponent(
+          "securitySchemes",
+          doc.data.security?.name ?? "SecuritySchema",
+          securitySchemes,
+        );
+        _route.security = [{ [authComponent.name]: [] }];
+      }
       if (_route.request) {
         if (doc.data.body instanceof z.ZodType) {
           _route.request.body = {
@@ -200,104 +196,54 @@ function _zodpress() {
     app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
     return app.listen(port, ...(args as Parameters<typeof app.listen>["1"][]));
   };
-  return Object.assign(app, { Use, Get, Post, Listen });
+  return Object.assign(app, {
+    Use,
+    Get,
+    Post,
+    Put,
+    Patch,
+    Delete,
+    Head,
+    Options,
+    Trace,
+    Listen,
+  });
 }
 
-const zodpress = Object.assign(_zodpress, express);
+// export const zodpress = Object.assign(_zodpress, express);
 
 export const Router = function Router(options?: express.RouterOptions) {
   const router = express.Router(options);
   const docs = [] as ZodPressDocType[];
-  const Use: typeof router.use = function (
-    path: unknown,
-    ...handlers: unknown[]
-  ) {
-    const tag =
-      typeof path === "string" ? capitalize(getMainPath(path)) : undefined;
-    if (typeof path === "string") {
-      for (const handler of handlers) {
-        if (
-          (typeof handler === "function" || typeof handler === "object") &&
-          handler &&
-          "docs" in handler &&
-          typeof handler.docs === "object" &&
-          Array.isArray(handler.docs)
-        ) {
-          for (const childDoc of handler.docs) {
-            docs.push({
-              tags: childDoc.tags || (tag ? [tag] : undefined),
-              path: path + childDoc.path,
-              method: childDoc.method,
-              data: childDoc.data,
-            });
-          }
-        }
-      }
-    }
-    return router.use(
-      path as Parameters<typeof router.use>["0"],
-      ...(handlers as Parameters<typeof router.use>["1"][]),
-    );
-  };
 
-  const Get: typeof router.get = function (
-    path: unknown,
-    ...handlers: unknown[]
-  ) {
-    if (typeof path === "string") {
-      for (const handler of handlers) {
-        if (
-          (typeof handler === "function" || typeof handler === "object") &&
-          handler &&
-          "doc" in handler &&
-          typeof handler.doc === "object" &&
-          handler.doc
-        ) {
-          docs.push({
-            path: path,
-            method: "get",
-            data: handler.doc,
-          });
-        }
-      }
-    }
-    return router.get(
-      path as Parameters<typeof router.get>["0"],
-      ...(handlers as Parameters<typeof router.get>["1"][]),
-    );
-  };
-  const Post: typeof router.post = function (
-    path: unknown,
-    ...handlers: unknown[]
-  ) {
-    if (typeof path === "string") {
-      for (const handler of handlers) {
-        if (
-          (typeof handler === "function" || typeof handler === "object") &&
-          handler &&
-          "doc" in handler &&
-          typeof handler.doc === "object" &&
-          handler.doc
-        ) {
-          docs.push({
-            path: path,
-            method: "post",
-            data: handler.doc,
-          });
-        }
-      }
-    }
-    return router.post(
-      path as Parameters<typeof router.post>["0"],
-      ...(handlers as Parameters<typeof router.post>["1"][]),
-    );
-  };
+  const Use = useBuilder(router, docs);
+
+  const Get = routeBuilder(router, "get", docs);
+  const Post = routeBuilder(router, "post", docs);
+  const Put = routeBuilder(router, "put", docs);
+  const Patch = routeBuilder(router, "patch", docs);
+  const Delete = routeBuilder(router, "delete", docs);
+  const Head = routeBuilder(router, "head", docs);
+  const Options = routeBuilder(router, "options", docs);
+  const Trace = routeBuilder(router, "trace", docs);
+
   return Object.assign(router, {
     Use,
     Get,
     Post,
+    Put,
+    Patch,
+    Delete,
+    Head,
+    Options,
+    Trace,
     docs,
   });
 };
 
-export default zodpress;
+_zodpress.Router = Router;
+
+const { Router: _r, ...restExpress } = express;
+_r;
+
+export const zodpress = Object.assign(_zodpress, restExpress);
